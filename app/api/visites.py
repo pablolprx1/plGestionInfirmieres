@@ -172,3 +172,222 @@ async def read_all_visites(current_user: dict = Depends(get_current_user)):
     ]
 
     return visites
+
+@router.post("/", response_model=models.Visite, status_code=status.HTTP_201_CREATED)
+async def create_visite(visite: models.Visite, current_user: dict = Depends(get_current_user)):
+    db = database.get_db()
+    cursor = db.cursor()
+
+    # Vérifier si l'utilisateur est autorisé à créer une visite
+    if current_user["role"] not in ("infirmiere", "patient"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Seules les infirmières et les patients peuvent créer des visites.",
+        )
+
+    # Vérifier si l'utilisateur est une infirmière en chef
+    cursor.execute("SELECT id FROM administrateur WHERE id = %s", (current_user["id"],))
+    is_chef = cursor.fetchone() is not None
+
+    # Si l'utilisateur est une infirmière (pas en chef), s'assurer qu'elle crée une visite pour elle-même
+    if current_user["role"] == "infirmiere" and not is_chef and visite.infirmiere_id != current_user["id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Une infirmière ne peut créer que des visites pour elle-même (sauf si elle est infirmière en chef).",
+        )
+
+    # Si l'utilisateur est un patient, s'assurer qu'il crée une visite pour lui-même
+    if current_user["role"] == "patient" and visite.patient_id != current_user["id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Un patient ne peut créer que des visites pour lui-même.",
+        )
+
+    # Vérifier si les IDs infirmiere et patient sont valides
+    cursor.execute("SELECT id FROM infirmiere WHERE id = %s", (visite.infirmiere_id,))
+    infirmiere_existe = cursor.fetchone() is not None
+    cursor.execute("SELECT id FROM patient WHERE id = %s", (visite.patient_id,))
+    patient_existe = cursor.fetchone() is not None
+
+    if not infirmiere_existe or not patient_existe:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="L'ID de l'infirmière ou du patient est invalide.",
+        )
+
+    query = """
+    INSERT INTO visite (date_prevue, infirmiere, patient, compte_rendu_infirmiere, compte_rendu_patient)
+    VALUES (%s, %s, %s, %s, %s)
+    """
+    values = (
+        visite.date_prevue,
+        visite.infirmiere_id,
+        visite.patient_id,
+        visite.compte_rendu_infirmiere,
+        visite.compte_rendu_patient,
+    )
+    cursor.execute(query, values)
+    db.commit()
+
+    # Récupérer l'ID de la nouvelle visite
+    visite_id = cursor.lastrowid
+
+    # Récupérer la visite créée pour la renvoyer
+    query = """
+    SELECT id, date_prevue, infirmiere, patient, compte_rendu_infirmiere, compte_rendu_patient
+    FROM visite
+    WHERE id = %s
+    """
+    cursor.execute(query, (visite_id,))
+    new_visite = cursor.fetchone()
+    db.close()
+
+    if not new_visite:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erreur lors de la récupération de la visite nouvellement créée.",
+        )
+
+    return models.Visite(
+        id=new_visite[0],
+        date_prevue=new_visite[1],
+        infirmiere_id=new_visite[2],
+        patient_id=new_visite[3],
+        compte_rendu_infirmiere=new_visite[4],
+        compte_rendu_patient=new_visite[5],
+    )
+
+# UPDATE
+@router.put("/{visite_id}", response_model=models.Visite)
+async def update_visite(
+    visite_id: int, visite_update: models.Visite, current_user: dict = Depends(get_current_user)
+):
+    db = database.get_db()
+    cursor = db.cursor()
+
+    # Récupérer la visite actuelle
+    query_get_visite = """
+    SELECT infirmiere, patient
+    FROM visite
+    WHERE id = %s
+    """
+    cursor.execute(query_get_visite, (visite_id,))
+    visite_info = cursor.fetchone()
+
+    if not visite_info:
+        raise HTTPException(status_code=404, detail="Visite non trouvée")
+
+    infirmiere_id, patient_id = visite_info
+
+    # Vérifier les autorisations
+    if current_user["role"] == "infirmiere":
+        # Seule l'infirmière concernée peut modifier la visite
+        if infirmiere_id != current_user["id"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Vous n'êtes pas autorisé à modifier cette visite.",
+            )
+    elif current_user["role"] == "patient":
+        # Seul le patient concerné peut modifier la visite
+        if patient_id != current_user["id"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Vous n'êtes pas autorisé à modifier cette visite.",
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Rôle inconnu."
+        )
+
+    # Mettre à jour la visite
+    query_update = """
+    UPDATE visite
+    SET date_prevue = %s, infirmiere = %s, patient = %s, compte_rendu_infirmiere = %s, compte_rendu_patient = %s
+    WHERE id = %s
+    """
+    values = (
+        visite_update.date_prevue,
+        visite_update.infirmiere_id,
+        visite_update.patient_id,
+        visite_update.compte_rendu_infirmiere,
+        visite_update.compte_rendu_patient,
+        visite_id,
+    )
+    cursor.execute(query_update, values)
+    db.commit()
+
+    # Récupérer la visite mise à jour
+    query_get_updated_visite = """
+    SELECT id, date_prevue, infirmiere, patient, compte_rendu_infirmiere, compte_rendu_patient
+    FROM visite
+    WHERE id = %s
+    """
+    cursor.execute(query_get_updated_visite, (visite_id,))
+    updated_visite = cursor.fetchone()
+    db.close()
+
+    if not updated_visite:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erreur lors de la récupération de la visite mise à jour.",
+        )
+
+    return models.Visite(
+        id=updated_visite[0],
+        date_prevue=updated_visite[1],
+        infirmiere_id=updated_visite[2],
+        patient_id=updated_visite[3],
+        compte_rendu_infirmiere=updated_visite[4],
+        compte_rendu_patient=updated_visite[5],
+    )
+
+# DELETE
+@router.delete("/{visite_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_visite(visite_id: int, current_user: dict = Depends(get_current_user)):
+    db = database.get_db()
+    cursor = db.cursor()
+
+    # Récupérer la visite actuelle
+    query_get_visite = """
+    SELECT infirmiere, patient
+    FROM visite
+    WHERE id = %s
+    """
+    cursor.execute(query_get_visite, (visite_id,))
+    visite_info = cursor.fetchone()
+
+    if not visite_info:
+        raise HTTPException(status_code=404, detail="Visite non trouvée")
+
+    infirmiere_id, patient_id = visite_info
+
+    # Vérifier les autorisations
+    if current_user["role"] == "infirmiere":
+        # Seule l'infirmière concernée peut supprimer la visite
+        if infirmiere_id != current_user["id"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Vous n'êtes pas autorisé à supprimer cette visite.",
+            )
+    elif current_user["role"] == "patient":
+        # Seul le patient concerné peut supprimer la visite
+        if patient_id != current_user["id"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Vous n'êtes pas autorisé à supprimer cette visite.",
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Rôle inconnu."
+        )
+
+    # Supprimer la visite
+    query_delete = """
+    DELETE FROM visite
+    WHERE id = %s
+    """
+    cursor.execute(query_delete, (visite_id,))
+    db.commit()
+    db.close()
+
+    return
