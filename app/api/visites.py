@@ -79,9 +79,9 @@ async def read_visite(visite_id: int, current_user: dict = Depends(get_current_u
     # Vérifier les droits
     if current_user["role"] == "infirmiere":
         if infirmiere_id != current_user["id"]:
-            cursor.execute("SELECT id FROM administrateur WHERE id = %s", (current_user["id"],))
-            is_chef = cursor.fetchone() is not None
-            if not is_chef:
+            cursor.execute("SELECT infirmiere_en_chef FROM infirmiere WHERE id = %s", (current_user["id"],))
+            is_chef = cursor.fetchone()
+            if not is_chef or not is_chef[0]:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Accès refusé : Vous n'êtes pas l'infirmière concernée par cette visite ni une infirmière en chef.",
@@ -135,10 +135,10 @@ async def read_all_visites(current_user: dict = Depends(get_current_user)):
     cursor = db.cursor()
 
     # Vérifie si l'utilisateur est une infirmière en chef
-    cursor.execute("SELECT id FROM administrateur WHERE id = %s", (current_user["id"],))
-    is_chef = cursor.fetchone() is not None
+    cursor.execute("SELECT infirmiere_en_chef FROM infirmiere WHERE id = %s", (current_user["id"],))
+    is_chef = cursor.fetchone()
 
-    if not is_chef or current_user["role"] != "infirmiere":
+    if not is_chef or not is_chef[0] or current_user["role"] != "infirmiere":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Accès refusé : Vous devez être une infirmière en chef pour accéder à toutes les visites.",
@@ -186,22 +186,23 @@ async def create_visite(visite: models.Visite, current_user: dict = Depends(get_
         )
 
     # Vérifier si l'utilisateur est une infirmière en chef
-    cursor.execute("SELECT id FROM administrateur WHERE id = %s", (current_user["id"],))
-    is_chef = cursor.fetchone() is not None
+    cursor.execute("SELECT infirmiere_en_chef FROM infirmiere WHERE id = %s", (current_user["id"],))
+    is_chef = cursor.fetchone()
 
-    # Si l'utilisateur est une infirmière (pas en chef), s'assurer qu'elle crée une visite pour elle-même
-    if current_user["role"] == "infirmiere" and not is_chef and visite.infirmiere_id != current_user["id"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Une infirmière ne peut créer que des visites pour elle-même (sauf si elle est infirmière en chef).",
-        )
-
+    # Si l'utilisateur est une infirmière, s'assurer qu'elle crée une visite pour elle-même
+    if current_user["role"] == "infirmiere":
+        if visite.infirmiere_id != current_user["id"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Une infirmière ne peut créer que des visites pour elle-même.",
+            )
     # Si l'utilisateur est un patient, s'assurer qu'il crée une visite pour lui-même
-    if current_user["role"] == "patient" and visite.patient_id != current_user["id"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Un patient ne peut créer que des visites pour lui-même.",
-        )
+    elif current_user["role"] == "patient":
+        if visite.patient_id != current_user["id"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Un patient ne peut créer que des visites pour lui-même.",
+            )
 
     # Vérifier si les IDs infirmiere et patient sont valides
     cursor.execute("SELECT id FROM infirmiere WHERE id = %s", (visite.infirmiere_id,))
@@ -281,14 +282,15 @@ async def update_visite(
 
     # Vérifier les autorisations
     if current_user["role"] == "infirmiere":
-        # Seule l'infirmière concernée peut modifier la visite
         if infirmiere_id != current_user["id"]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Vous n'êtes pas autorisé à modifier cette visite.",
-            )
+            cursor.execute("SELECT infirmiere_en_chef FROM infirmiere WHERE id = %s", (current_user["id"],))
+            is_chef = cursor.fetchone()
+            if not is_chef or not is_chef[0]:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Vous n'êtes pas autorisé à modifier cette visite.",
+                )
     elif current_user["role"] == "patient":
-        # Seul le patient concerné peut modifier la visite
         if patient_id != current_user["id"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -299,16 +301,21 @@ async def update_visite(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Rôle inconnu."
         )
 
+    # Vérifier que les IDs n'ont pas été modifiés
+    if visite_update.infirmiere_id != infirmiere_id or visite_update.patient_id != patient_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Vous ne pouvez pas modifier les IDs de l'infirmière ou du patient.",
+        )
+
     # Mettre à jour la visite
     query_update = """
     UPDATE visite
-    SET date_prevue = %s, infirmiere = %s, patient = %s, compte_rendu_infirmiere = %s, compte_rendu_patient = %s
+    SET date_prevue = %s, compte_rendu_infirmiere = %s, compte_rendu_patient = %s
     WHERE id = %s
     """
     values = (
         visite_update.date_prevue,
-        visite_update.infirmiere_id,
-        visite_update.patient_id,
         visite_update.compte_rendu_infirmiere,
         visite_update.compte_rendu_patient,
         visite_id,
@@ -363,14 +370,15 @@ async def delete_visite(visite_id: int, current_user: dict = Depends(get_current
 
     # Vérifier les autorisations
     if current_user["role"] == "infirmiere":
-        # Seule l'infirmière concernée peut supprimer la visite
         if infirmiere_id != current_user["id"]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Vous n'êtes pas autorisé à supprimer cette visite.",
-            )
+            cursor.execute("SELECT infirmiere_en_chef FROM infirmiere WHERE id = %s", (current_user["id"],))
+            is_chef = cursor.fetchone()
+            if not is_chef or not is_chef[0]:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Vous n'êtes pas autorisé à supprimer cette visite.",
+                )
     elif current_user["role"] == "patient":
-        # Seul le patient concerné peut supprimer la visite
         if patient_id != current_user["id"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
