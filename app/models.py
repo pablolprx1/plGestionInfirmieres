@@ -5,6 +5,7 @@ from typing import Optional, List
 class Infirmiere(BaseModel):
     id: int
     fichier_photo: Optional[str] = None
+    infirmiere_en_chef: bool = False
 
 class Personne(BaseModel):
     id: int
@@ -28,7 +29,6 @@ class PersonneLogin(BaseModel):
     derniere_connexion: Optional[date] = None
     nb_tentative_erreur: int = 0
 
-# Modèle pour les visites (exemple)
 class Visite(BaseModel):
     id: Optional[int] = None
     date_prevue: Optional[datetime] = None

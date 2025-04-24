@@ -1,6 +1,13 @@
 from fastapi import HTTPException, status
 from app import database
 
+def verif_role(current_user: dict, allowed_roles: list):
+    if current_user["role"] not in allowed_roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Accès non autorisé pour ce rôle"
+        )
+
 async def verif_infirmiere_en_chef(user_id: int):
     """Vérifie si l'utilisateur est une infirmière en chef."""
     db = database.get_db()

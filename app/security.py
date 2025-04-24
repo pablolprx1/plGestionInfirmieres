@@ -2,9 +2,8 @@ import hashlib
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
-from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from app import database
+from fastapi import HTTPException, status, Depends
 
 # Paramètres JWT
 SECRET_KEY = "caseraitconquequelquntrouvecetteclesecretetreslonguedisdonc"
@@ -41,17 +40,21 @@ def decode_access_token(token: str):
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     payload = decode_access_token(token)
-    if payload is None:
+    if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Informations d'authentifications invalides",
+            detail="Invalid authentication credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    user_id: str = payload.get("sub")
-    if user_id is None:
+    
+    user_id = payload.get("sub")
+    role = payload.get("role")
+    
+    if not user_id or not role:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Informations d'authentifications invalides",
+            detail="Invalid authentication credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return int(user_id)
+
+    return {"id": int(user_id), "role": role}

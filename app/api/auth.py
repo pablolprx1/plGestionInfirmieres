@@ -9,7 +9,18 @@ router = APIRouter()
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
     db = database.get_db()
     cursor = db.cursor()
-    query = "SELECT id, mp FROM personne_login WHERE login = %s"
+    
+    # Vérifier si c'est une infirmière ou un patient
+    query = """
+    SELECT 
+        pl.id, 
+        pl.mp,
+        IF(i.id IS NOT NULL, 'infirmiere', 'patient') AS role
+    FROM personne_login pl
+    LEFT JOIN infirmiere i ON pl.id = i.id
+    LEFT JOIN patient p ON pl.id = p.id
+    WHERE pl.login = %s
+    """
     cursor.execute(query, (form_data.username,))
     user = cursor.fetchone()
     db.close()
@@ -21,7 +32,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    user_id, hashed_password = user
+    user_id, hashed_password, role = user
     if not security.verify_password(form_data.password, hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -31,6 +42,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 
     access_token_expires = timedelta(minutes=security.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = security.create_access_token(
-        data={"sub": str(user_id)}, expires_delta=access_token_expires
+        data={"sub": str(user_id), "role": role},
+        expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}
