@@ -2,6 +2,7 @@ from app.security import get_current_user
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from app import models, database
+import logging
 
 router = APIRouter()
 
@@ -50,6 +51,51 @@ async def read_visites(current_user: dict = Depends(get_current_user)):
             infirmiere_id=visite[2] if current_user["role"] == "patient" else None,
             compte_rendu_infirmiere=visite[3],
             compte_rendu_patient=visite[4],
+        )
+        for visite in visites_data
+    ]
+
+    return visites
+
+# ROLE: Infirmière en chef - Accès à toutes les visites
+@router.get("/all", response_model=List[models.Visite])
+async def read_all_visites(current_user: dict = Depends(get_current_user)):
+    db = database.get_db()
+    cursor = db.cursor()
+
+    # Vérifie si l'utilisateur est une infirmière en chef
+    cursor.execute("SELECT infirmiere_en_chef FROM infirmiere WHERE id = %s", (current_user["id"],))
+    is_chef = cursor.fetchone()
+
+    if not is_chef or not is_chef[0] or current_user["role"] != "infirmiere":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Accès refusé : Vous devez être une infirmière en chef pour accéder à toutes les visites.",
+        )
+
+    query = """
+    SELECT
+        v.id,
+        v.date_prevue,
+        v.infirmiere AS infirmiere_id,
+        v.patient AS patient_id,
+        v.compte_rendu_infirmiere,
+        v.compte_rendu_patient
+    FROM
+        visite v
+    """
+    cursor.execute(query)
+    visites_data = cursor.fetchall()
+    db.close()
+
+    visites = [
+        models.Visite(
+            id=visite[0],
+            date_prevue=visite[1],
+            infirmiere_id=visite[2],
+            patient_id=visite[3],
+            compte_rendu_infirmiere=visite[4],
+            compte_rendu_patient=visite[5],
         )
         for visite in visites_data
     ]
@@ -128,51 +174,7 @@ async def read_visite(visite_id: int, current_user: dict = Depends(get_current_u
 
     return visite
 
-# ROLE: Infirmière en chef - Accès à toutes les visites
-@router.get("/all", response_model=List[models.Visite])
-async def read_all_visites(current_user: dict = Depends(get_current_user)):
-    db = database.get_db()
-    cursor = db.cursor()
-
-    # Vérifie si l'utilisateur est une infirmière en chef
-    cursor.execute("SELECT infirmiere_en_chef FROM infirmiere WHERE id = %s", (current_user["id"],))
-    is_chef = cursor.fetchone()
-
-    if not is_chef or not is_chef[0] or current_user["role"] != "infirmiere":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Accès refusé : Vous devez être une infirmière en chef pour accéder à toutes les visites.",
-        )
-
-    query = """
-    SELECT
-        v.id,
-        v.date_prevue,
-        v.infirmiere AS infirmiere_id,
-        v.patient AS patient_id,
-        v.compte_rendu_infirmiere,
-        v.compte_rendu_patient
-    FROM
-        visite v
-    """
-    cursor.execute(query)
-    visites_data = cursor.fetchall()
-    db.close()
-
-    visites = [
-        models.Visite(
-            id=visite[0],
-            date_prevue=visite[1],
-            infirmiere_id=visite[2],
-            patient_id=visite[3],
-            compte_rendu_infirmiere=visite[4],
-            compte_rendu_patient=visite[5],
-        )
-        for visite in visites_data
-    ]
-
-    return visites
-
+# Création d'une visite
 @router.post("/", response_model=models.Visite, status_code=status.HTTP_201_CREATED)
 async def create_visite(visite: models.Visite, current_user: dict = Depends(get_current_user)):
     db = database.get_db()
@@ -184,27 +186,20 @@ async def create_visite(visite: models.Visite, current_user: dict = Depends(get_
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Seules les infirmières et les patients peuvent créer des visites.",
         )
-
-    # Vérifier si l'utilisateur est une infirmière en chef
-    cursor.execute("SELECT infirmiere_en_chef FROM infirmiere WHERE id = %s", (current_user["id"],))
-    is_chef = cursor.fetchone()
-
-    # Si l'utilisateur est une infirmière, s'assurer qu'elle crée une visite pour elle-même
+    
+    # Initialiser l'ID en fonction du rôle de l'utilisateur
     if current_user["role"] == "infirmiere":
-        if visite.infirmiere_id != current_user["id"]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Une infirmière ne peut créer que des visites pour elle-même.",
-            )
-    # Si l'utilisateur est un patient, s'assurer qu'il crée une visite pour lui-même
+        visite.infirmiere_id = current_user["id"]
     elif current_user["role"] == "patient":
-        if visite.patient_id != current_user["id"]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Un patient ne peut créer que des visites pour lui-même.",
-            )
+        visite.patient_id = current_user["id"]
 
     # Vérifier si les IDs infirmiere et patient sont valides
+    if not visite.infirmiere_id or not visite.patient_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="L'ID de l'infirmière ou du patient est manquant.",
+        )
+
     cursor.execute("SELECT id FROM infirmiere WHERE id = %s", (visite.infirmiere_id,))
     infirmiere_existe = cursor.fetchone() is not None
     cursor.execute("SELECT id FROM patient WHERE id = %s", (visite.patient_id,))
@@ -213,9 +208,12 @@ async def create_visite(visite: models.Visite, current_user: dict = Depends(get_
     if not infirmiere_existe or not patient_existe:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="L'ID de l'infirmière ou du patient est invalide.",
+            detail={
+                "message": "ID infirmière ou patient invalide.",
+            },
         )
 
+    # Insérer la visite dans la base de données
     query = """
     INSERT INTO visite (date_prevue, infirmiere, patient, compte_rendu_infirmiere, compte_rendu_patient)
     VALUES (%s, %s, %s, %s, %s)
@@ -299,13 +297,6 @@ async def update_visite(
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Rôle inconnu."
-        )
-
-    # Vérifier que les IDs n'ont pas été modifiés
-    if visite_update.infirmiere_id != infirmiere_id or visite_update.patient_id != patient_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Vous ne pouvez pas modifier les IDs de l'infirmière ou du patient.",
         )
 
     # Mettre à jour la visite

@@ -43,7 +43,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials",
+            detail="Token invalide ou expiré",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
@@ -53,7 +53,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     if not user_id or not role:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials",
+            detail="Token invalide ou expiré",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

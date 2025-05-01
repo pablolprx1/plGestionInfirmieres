@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "FastAPI (uvicorn)",
+        "type": "debugpy",
+        "request": "launch",
+        "module": "uvicorn",
+        "args": [
+          "main:app",        // à adapter selon ton fichier
+          "--reload",        // utile pour recharger à chaud
+          "--port", "8000"
+        ],
+        "jinja": true,
+        "console": "integratedTerminal"
+      }
+    ]
+  }
