@@ -54,40 +54,40 @@ Gestion de l'authentification et de la sécurité :
 - **Body**: Login et mot de passe
 - **Réponse**: Token JWT pour l'authentification
 
-### 2. Gestion des Visites (`/api/visites`)
+### 2. Gestion des Visites (`/visites`)
 
 #### Récupérer toutes les visites
-- **GET** `/api/visites/`
+- **GET** `/visites/`
 - **Description**: Récupère toutes les visites de l'utilisateur connecté (infirmière ou patient)
 - **Authentification**: Requise
 - **Rôles**: Infirmière, Patient
 
 #### Récupérer une visite spécifique
-- **GET** `/api/visites/{visite_id}`
+- **GET** `/visites/{visite_id}`
 - **Description**: Récupère les détails d'une visite spécifique
 - **Authentification**: Requise
 - **Rôles**: Infirmière, Patient
 
 #### Récupérer toutes les visites (Infirmière en chef)
-- **GET** `/api/visites/all`
+- **GET** `/visites/all`
 - **Description**: Récupère toutes les visites (accès réservé aux infirmières en chef)
 - **Authentification**: Requise
 - **Rôles**: Infirmière en chef
 
 #### Créer une nouvelle visite
-- **POST** `/api/visites/`
+- **POST** `/visites/`
 - **Description**: Crée une nouvelle visite
 - **Authentification**: Requise
 - **Rôles**: Infirmière, Patient
 
 #### Mettre à jour une visite
-- **PUT** `/api/visites/{visite_id}`
+- **PUT** `/visites/{visite_id}`
 - **Description**: Met à jour les informations d'une visite
 - **Authentification**: Requise
 - **Rôles**: Infirmière, Patient
 
 #### Supprimer une visite
-- **DELETE** `/api/visites/{visite_id}`
+- **DELETE** `/visites/{visite_id}`
 - **Description**: Supprime une visite
 - **Authentification**: Requise
 - **Rôles**: Infirmière, Patient
@@ -150,4 +150,4 @@ passlib==1.7.4
 python-multipart==0.0.5
 mysql-connector-python==8.0.26
 pydantic==1.8.2
-``` 
+```
