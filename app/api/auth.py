@@ -10,7 +10,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     db = database.get_db()
     cursor = db.cursor()
     
-    # Vérifier si c'est une infirmière ou un patient
+    # Vérifie si c'est une infirmière ou un patient
     query = """
     SELECT 
         pl.id, 

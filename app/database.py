@@ -10,7 +10,7 @@ DATABASE_CONFIG = {
     'raise_on_warnings': True
 }
 
-# Pool de connexion pour la base de données
+# Pool de connexion pour la base de données 
 connection_pool = mysql.connector.pooling.MySQLConnectionPool(
     pool_name="mon_pool",
     pool_size=5,

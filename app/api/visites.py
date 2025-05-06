@@ -2,9 +2,8 @@ from app.security import get_current_user
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from app import models, database
-import logging
 
-router = APIRouter()
+router = APIRouter() # Création d'un routeur FastAPI
 
 # Accès à toutes les visites d'un utilisateur (infirmière ou patient)
 @router.get("/", response_model=List[models.Visite])
